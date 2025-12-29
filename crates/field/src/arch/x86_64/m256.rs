@@ -20,14 +20,9 @@ use rand::{
 
 use crate::{
 	BinaryField,
-	arch::{
-		binary_utils::make_func_to_i8,
-		portable::{
-			packed::{PackedPrimitiveType, impl_pack_scalar},
-			packed_arithmetic::{
-				UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd,
-			},
-		},
+	arch::portable::{
+		packed::{PackedPrimitiveType, impl_pack_scalar},
+		packed_arithmetic::{UnderlierWithBitConstants, interleave_mask_even, interleave_mask_odd},
 	},
 	underlier::{
 		Divisible, NumCast, SmallU, U1, U2, U4, UnderlierType, UnderlierWithBitOps, WithUnderlier,
@@ -339,132 +334,6 @@ impl UnderlierWithBitOps for M256 {
 	#[inline]
 	fn fill_with_bit(val: u8) -> Self {
 		Self(unsafe { _mm256_set1_epi8(val.wrapping_neg() as i8) })
-	}
-
-	#[inline(always)]
-	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
-	where
-		T: UnderlierType,
-		Self: From<T>,
-	{
-		match T::BITS {
-			1 | 2 | 4 => {
-				let mut f = make_func_to_i8::<T, Self>(f);
-
-				unsafe {
-					_mm256_set_epi8(
-						f(31),
-						f(30),
-						f(29),
-						f(28),
-						f(27),
-						f(26),
-						f(25),
-						f(24),
-						f(23),
-						f(22),
-						f(21),
-						f(20),
-						f(19),
-						f(18),
-						f(17),
-						f(16),
-						f(15),
-						f(14),
-						f(13),
-						f(12),
-						f(11),
-						f(10),
-						f(9),
-						f(8),
-						f(7),
-						f(6),
-						f(5),
-						f(4),
-						f(3),
-						f(2),
-						f(1),
-						f(0),
-					)
-				}
-			}
-			8 => {
-				let mut f = |i| u8::num_cast_from(Self::from(f(i))) as i8;
-				unsafe {
-					_mm256_set_epi8(
-						f(31),
-						f(30),
-						f(29),
-						f(28),
-						f(27),
-						f(26),
-						f(25),
-						f(24),
-						f(23),
-						f(22),
-						f(21),
-						f(20),
-						f(19),
-						f(18),
-						f(17),
-						f(16),
-						f(15),
-						f(14),
-						f(13),
-						f(12),
-						f(11),
-						f(10),
-						f(9),
-						f(8),
-						f(7),
-						f(6),
-						f(5),
-						f(4),
-						f(3),
-						f(2),
-						f(1),
-						f(0),
-					)
-				}
-			}
-			16 => {
-				let mut f = |i| u16::num_cast_from(Self::from(f(i))) as i16;
-				unsafe {
-					_mm256_set_epi16(
-						f(15),
-						f(14),
-						f(13),
-						f(12),
-						f(11),
-						f(10),
-						f(9),
-						f(8),
-						f(7),
-						f(6),
-						f(5),
-						f(4),
-						f(3),
-						f(2),
-						f(1),
-						f(0),
-					)
-				}
-			}
-			32 => {
-				let mut f = |i| u32::num_cast_from(Self::from(f(i))) as i32;
-				unsafe { _mm256_set_epi32(f(7), f(6), f(5), f(4), f(3), f(2), f(1), f(0)) }
-			}
-			64 => {
-				let mut f = |i| u64::num_cast_from(Self::from(f(i))) as i64;
-				unsafe { _mm256_set_epi64x(f(3), f(2), f(1), f(0)) }
-			}
-			128 => {
-				let mut f = |i| M128::from(u128::num_cast_from(Self::from(f(i)))).0;
-				unsafe { _mm256_set_m128i(f(1), f(0)) }
-			}
-			_ => panic!("unsupported bit count"),
-		}
-		.into()
 	}
 
 	#[inline(always)]
@@ -1062,6 +931,16 @@ impl Divisible<M128> for M256 {
 	fn broadcast(val: M128) -> Self {
 		unsafe { Self(_mm256_broadcastsi128_si256(val.0)) }
 	}
+
+	#[inline]
+	fn from_iter(iter: impl Iterator<Item = M128>) -> Self {
+		let mut result = Self::ZERO;
+		let arr: &mut [M128; 2] = bytemuck::cast_mut(&mut result);
+		for (i, val) in iter.take(2).enumerate() {
+			arr[i] = val;
+		}
+		result
+	}
 }
 
 impl Divisible<u128> for M256 {
@@ -1095,6 +974,16 @@ impl Divisible<u128> for M256 {
 	#[inline]
 	fn broadcast(val: u128) -> Self {
 		Divisible::<M128>::broadcast(M128::from(val))
+	}
+
+	#[inline]
+	fn from_iter(iter: impl Iterator<Item = u128>) -> Self {
+		let mut result = Self::ZERO;
+		let arr: &mut [u128; 2] = bytemuck::cast_mut(&mut result);
+		for (i, val) in iter.take(2).enumerate() {
+			arr[i] = val;
+		}
+		result
 	}
 }
 
@@ -1145,6 +1034,16 @@ impl Divisible<u64> for M256 {
 	#[inline]
 	fn broadcast(val: u64) -> Self {
 		unsafe { Self(_mm256_set1_epi64x(val as i64)) }
+	}
+
+	#[inline]
+	fn from_iter(iter: impl Iterator<Item = u64>) -> Self {
+		let mut result = Self::ZERO;
+		let arr: &mut [u64; 4] = bytemuck::cast_mut(&mut result);
+		for (i, val) in iter.take(4).enumerate() {
+			arr[i] = val;
+		}
+		result
 	}
 }
 
@@ -1203,6 +1102,16 @@ impl Divisible<u32> for M256 {
 	#[inline]
 	fn broadcast(val: u32) -> Self {
 		unsafe { Self(_mm256_set1_epi32(val as i32)) }
+	}
+
+	#[inline]
+	fn from_iter(iter: impl Iterator<Item = u32>) -> Self {
+		let mut result = Self::ZERO;
+		let arr: &mut [u32; 8] = bytemuck::cast_mut(&mut result);
+		for (i, val) in iter.take(8).enumerate() {
+			arr[i] = val;
+		}
+		result
 	}
 }
 
@@ -1277,6 +1186,16 @@ impl Divisible<u16> for M256 {
 	#[inline]
 	fn broadcast(val: u16) -> Self {
 		unsafe { Self(_mm256_set1_epi16(val as i16)) }
+	}
+
+	#[inline]
+	fn from_iter(iter: impl Iterator<Item = u16>) -> Self {
+		let mut result = Self::ZERO;
+		let arr: &mut [u16; 16] = bytemuck::cast_mut(&mut result);
+		for (i, val) in iter.take(16).enumerate() {
+			arr[i] = val;
+		}
+		result
 	}
 }
 
@@ -1383,6 +1302,16 @@ impl Divisible<u8> for M256 {
 	#[inline]
 	fn broadcast(val: u8) -> Self {
 		unsafe { Self(_mm256_set1_epi8(val as i8)) }
+	}
+
+	#[inline]
+	fn from_iter(iter: impl Iterator<Item = u8>) -> Self {
+		let mut result = Self::ZERO;
+		let arr: &mut [u8; 32] = bytemuck::cast_mut(&mut result);
+		for (i, val) in iter.take(32).enumerate() {
+			arr[i] = val;
+		}
+		result
 	}
 }
 
