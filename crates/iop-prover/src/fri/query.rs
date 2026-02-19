@@ -4,7 +4,7 @@ use std::iter;
 
 use binius_field::{BinaryField, PackedField};
 use binius_iop::{
-	fri::{FRIParams, vcs_optimal_layers_depths_iter},
+	fri::{vcs_optimal_layers_depths_iter, FRIParams},
 	merkle_tree::MerkleTreeScheme,
 };
 use binius_math::{FieldBuffer, FieldSlice};

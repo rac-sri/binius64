@@ -1,7 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 use binius_field::{BinaryField, PackedField};
 use binius_iop::{fri::FRIParams, merkle_tree::MerkleTreeScheme};
-use binius_math::{FieldBuffer, FieldSlice, ntt::AdditiveNTT};
+use binius_math::{ntt::AdditiveNTT, FieldBuffer, FieldSlice};
 use binius_utils::rayon::prelude::*;
 
 use super::error::Error;
@@ -112,7 +112,7 @@ mod tests {
 	use binius_field::{
 		BinaryField128bGhash as B128, PackedBinaryGhash2x128b, PackedBinaryGhash4x128b,
 	};
-	use binius_math::{FieldBuffer, test_utils::random_scalars};
+	use binius_math::{test_utils::random_scalars, FieldBuffer};
 	use rand::{prelude::*, rngs::StdRng};
 
 	use super::*;

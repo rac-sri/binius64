@@ -7,22 +7,22 @@ use binius_field::{
 	BinaryField, BinaryField128bGhash as B128, PackedBinaryGhash1x128b, PackedField,
 };
 use binius_hash::{ParallelCompressionAdaptor, StdCompression, StdDigest};
-use binius_iop::fri::{FRIFoldVerifier, FRIParams, verify::FRIQueryVerifier};
+use binius_iop::fri::{verify::FRIQueryVerifier, FRIFoldVerifier, FRIParams};
 use binius_math::{
-	BinarySubspace, ReedSolomonCode,
 	multilinear::evaluate::evaluate,
-	ntt::{NeighborsLastSingleThread, domain_context::GenericOnTheFly},
-	test_utils::{Packed128b, random_field_buffer},
+	ntt::{domain_context::GenericOnTheFly, NeighborsLastSingleThread},
+	test_utils::{random_field_buffer, Packed128b},
+	BinarySubspace, ReedSolomonCode,
 };
 use binius_transcript::{
-	ProverTranscript,
 	fiat_shamir::{CanSample, HasherChallenger},
+	ProverTranscript,
 };
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use rand::prelude::*;
 
-use super::{CommitOutput, FRIFoldProver, FoldRoundOutput, commit_interleaved};
-use crate::merkle_tree::{MerkleTreeProver, prover::BinaryMerkleTreeProver};
+use super::{commit_interleaved, CommitOutput, FRIFoldProver, FoldRoundOutput};
+use crate::merkle_tree::{prover::BinaryMerkleTreeProver, MerkleTreeProver};
 
 type StdChallenger = HasherChallenger<StdDigest>;
 

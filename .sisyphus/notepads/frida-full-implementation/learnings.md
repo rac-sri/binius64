@@ -1,0 +1,8 @@
+- Added initial StateChain struct + new() with initial state stored in `states` and empty challenges.
+- Used `BinaryField128bGhash` in unit test to validate initialization behavior.
+- Added `frida_full` module wiring via `fri/mod.rs` and `frida_full/mod.rs`.
+- Implemented state/challenge updates via chained compression with index encoding and a challenge wrapper using `PseudoCompressionFunction`.
+- QSelect uses compression folding over challenges and FNV-1a style byte hashing for field-to-index conversion.
+- Auth paths store values + proof bytes; OpenAuth uses ProverTranscript per path and CheckAuth validates qselect position, Merkle openings, and simple value consistency.
+- field_to_index now hashes serialized field bytes with SHA-256 and maps to index via first 8 digest bytes.
+- open_auth now accepts layer_depths and uses per-layer depth when proving paths.
