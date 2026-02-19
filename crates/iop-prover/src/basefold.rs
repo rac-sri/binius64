@@ -18,7 +18,7 @@ use binius_transcript::{
 use binius_utils::SerializeBytes;
 
 use crate::{
-	fri::{self, FRIFoldProver, FoldRoundOutput},
+	fri::{self, FRIFoldProver, FRIQueryProver, FoldRoundOutput},
 	merkle_tree::MerkleTreeProver,
 };
 
@@ -48,7 +48,7 @@ where
 	MerkleProver: MerkleTreeProver<F>,
 {
 	sumcheck_prover: BivariateProductSumcheckProver<P>,
-	fri_folder: FRIFoldProver<'a, F, P, NTT, MerkleProver>,
+	pub fri_folder: FRIFoldProver<'a, F, P, NTT, MerkleProver>,
 }
 
 impl<'a, F, P, NTT, MerkleScheme, MerkleProver> BaseFoldProver<'a, F, P, NTT, MerkleProver>
@@ -130,7 +130,7 @@ where
 	pub fn prove<T: Challenger>(
 		mut self,
 		transcript: &mut ProverTranscript<T>,
-	) -> Result<(), Error> {
+	) -> Result<FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>, Error> {
 		let _scope = tracing::debug_span!("Basefold").entered();
 
 		let n_vars = self.sumcheck_prover.n_vars();
@@ -146,23 +146,26 @@ where
 			let challenge = transcript.sample();
 			self.fold(challenge)?;
 		}
-		self.finish(transcript)?;
+		let prover = self.finish(transcript)?;
 
-		Ok(())
+		Ok(prover)
 	}
 
 	/// Finalizes the transcript by proving FRI queries.
 	///
 	/// ## Arguments
 	/// * `prover_challenger` - the prover's mutable transcript
-	fn finish<T: Challenger>(mut self, transcript: &mut ProverTranscript<T>) -> Result<(), Error> {
+	fn finish<T: Challenger>(
+		mut self,
+		transcript: &mut ProverTranscript<T>,
+	) -> Result<FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>, Error> {
 		let commitment = self.fri_folder.execute_fold_round()?;
 		if let FoldRoundOutput::Commitment(commitment) = commitment {
 			transcript.message().write(&commitment);
 		}
 
-		self.fri_folder.finish_proof(transcript)?;
-		Ok(())
+		let prover = self.fri_folder.finish_proof(transcript)?;
+		Ok(prover)
 	}
 }
 

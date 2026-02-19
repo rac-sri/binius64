@@ -221,7 +221,7 @@ where
 	pub fn finish_proof<Challenger_>(
 		self,
 		transcript: &mut ProverTranscript<Challenger_>,
-	) -> Result<(), Error>
+	) -> Result<FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>,Error>
 	where
 		Challenger_: Challenger,
 	{
@@ -240,7 +240,7 @@ where
 			query_prover.prove_query(index, &mut transcript.decommitment())?;
 		}
 
-		Ok(())
+		Ok(query_prover)
 	}
 }
 
