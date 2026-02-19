@@ -8,7 +8,8 @@
 //! [DP24]: <https://eprint.iacr.org/2024/504>
 
 use binius_field::BinaryField;
-use binius_transcript::{Error as TranscriptError, VerifierTranscript, fiat_shamir::Challenger};
+use binius_iop::basefold::VerifierWithArena;
+use binius_transcript::{fiat_shamir::Challenger, Error as TranscriptError, VerifierTranscript};
 use binius_utils::DeserializeBytes;
 use binius_verifier::{fri::FRIParams, merkle_tree::MerkleTreeScheme, protocols::basefold};
 
@@ -31,17 +32,20 @@ pub fn verify<F, MTScheme, Challenger_>(
 	codeword_commitment: MTScheme::Digest,
 	fri_params: &FRIParams<F>,
 	merkle_scheme: &MTScheme,
-) -> Result<(), Error>
+) -> Result<VerifierWithArena<'static, F, MTScheme>, Error>
 where
 	F: BinaryField,
 	Challenger_: Challenger,
-	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
+	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes + 'static> + 'static,
 {
-	let basefold::ReducedOutput {
-		final_fri_value,
-		final_sumcheck_value,
-		challenges,
-	} = basefold::verify(
+	let (
+		basefold::ReducedOutput {
+			final_fri_value,
+			final_sumcheck_value,
+			challenges,
+		},
+		verifier_with_arena,
+	) = basefold::verify_with_verifier(
 		fri_params,
 		merkle_scheme,
 		codeword_commitment,
@@ -59,7 +63,7 @@ where
 		return Err(VerificationError::EvaluationInconsistency.into());
 	}
 
-	Ok(())
+	Ok(verifier_with_arena)
 }
 
 #[derive(Debug, thiserror::Error)]

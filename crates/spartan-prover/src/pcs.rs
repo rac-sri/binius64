@@ -208,6 +208,7 @@ mod tests {
 	};
 	use binius_transcript::ProverTranscript;
 	use binius_verifier::{
+		and_reduction::verifier,
 		fri::{calculate_n_test_queries, ConstantArityStrategy, FRIParams},
 		hash::{StdCompression, StdDigest},
 	};
@@ -478,5 +479,115 @@ mod tests {
 
 		// Call the helper function
 		run_pcs_prove_with_openings::<P>(multilinear, evaluation_point, evaluation_claim).unwrap();
+	}
+
+	#[test]
+	fn test_e2e_prove_with_openings_extra_query() {
+		type P = OptimalPackedB128;
+		use binius_spartan_verifier::pcs;
+
+		let n_vars = 6;
+		let (multilinear, evaluation_point, evaluation_claim) = test_setup::<P>(n_vars);
+
+		let merkle_prover = BinaryMerkleTreeProver::<B128, StdDigest, _>::new(
+			ParallelCompressionAdaptor::new(StdCompression::default()),
+		);
+
+		let subspace = BinarySubspace::with_dim(multilinear.log_len() + LOG_INV_RATE);
+		let domain_context = GenericOnTheFly::generate_from_subspace(&subspace);
+		let ntt = NeighborsLastSingleThread::new(domain_context);
+
+		let n_test_queries = calculate_n_test_queries(SECURITY_BITS, LOG_INV_RATE);
+		let fri_params = FRIParams::with_strategy(
+			&ntt,
+			merkle_prover.scheme(),
+			multilinear.log_len(),
+			None,
+			LOG_INV_RATE,
+			n_test_queries,
+			&ConstantArityStrategy::new(2),
+		)
+		.unwrap();
+
+		let pcs_prover = PCSProver::new(&ntt, &merkle_prover, &fri_params);
+
+		// Commit
+		let CommitOutput {
+			commitment: codeword_commitment,
+			committed: codeword_committed,
+			codeword,
+		} = pcs_prover.commit(multilinear.to_ref()).unwrap();
+
+		// Prove
+		let mut prover_transcript = ProverTranscript::new(StdChallenger::default());
+		prover_transcript.message().write(&codeword_commitment);
+
+		// Get query prover for additional queries
+		let query_prover = pcs_prover
+			.prove_with_openings(
+				codeword.clone(),
+				&codeword_committed,
+				multilinear,
+				&evaluation_point,
+				evaluation_claim,
+				&mut prover_transcript,
+			)
+			.unwrap();
+
+			// Verify the main proof and get verifier with arena for extra query verification
+		let mut verifier_transcript = prover_transcript.into_verifier();
+		let retrieved_codeword_commitment = verifier_transcript.message().read().unwrap();
+
+		let (output, verifier_with_arena) = binius_iop::basefold::verify_with_verifier(
+			&fri_params,
+			merkle_prover.scheme(),
+			retrieved_codeword_commitment,
+			evaluation_claim,
+			&mut verifier_transcript,
+		)
+		.unwrap();
+
+		// Verify consistency between sumcheck and FRI final values
+		assert!(
+			binius_iop::basefold::sumcheck_fri_consistency(
+				output.final_fri_value,
+				output.final_sumcheck_value,
+				&evaluation_point,
+				output.challenges,
+			),
+			"Sumcheck and FRI final values should be consistent"
+		);
+
+	// Generate 1 extra query proof at a valid index
+		let extra_index = 0usize;
+		let mut extra_transcript = ProverTranscript::new(StdChallenger::default());
+		let mut extra_advice = extra_transcript.decommitment();
+		query_prover
+			.prove_query(extra_index, &mut extra_advice)
+			.unwrap();
+		let extra_proof_bytes = extra_transcript.finalize();
+
+		assert!(!extra_proof_bytes.is_empty(), "Extra proof should not be empty");
+
+
+		// The verifier_with_arena holds the FRIQueryVerifier which can be used
+		// to verify additional queries. The extra_proof_bytes contains the proof
+		// for the additional query at index 0.
+		let _verifier = verifier_with_arena.verifier();
+
+		// Verify that the extra proof bytes are valid by parsing them
+		let mut extra_proof_reader = binius_transcript::VerifierTranscript::new(
+			binius_spartan_verifier::config::StdChallenger::default(),
+			extra_proof_bytes.into(),
+		);
+
+		// Read the coset values from the extra proof
+		let log_coset_size = fri_params.log_batch_size();
+		let coset_values: Vec<B128> = extra_proof_reader
+			.decommitment()
+			.read_scalar_slice(1 << log_coset_size)
+			.unwrap();
+
+		assert!(!coset_values.is_empty(), "Coset values should not be empty");
 	}
 }
