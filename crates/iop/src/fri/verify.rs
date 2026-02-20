@@ -35,16 +35,16 @@ where
 	F: BinaryField,
 	VCS: MerkleTreeScheme<F>,
 {
-	vcs: &'a VCS,
-	params: &'a FRIParams<F>,
+	pub vcs: &'a VCS,
+	pub params: &'a FRIParams<F>,
 	/// Received commitment to the codeword.
-	codeword_commitment: &'a VCS::Digest,
+	pub codeword_commitment: &'a VCS::Digest,
 	/// Received commitments to the round messages.
-	round_commitments: &'a [VCS::Digest],
+	pub round_commitments: &'a [VCS::Digest],
 	/// The challenges for each round.
-	interleave_tensor: FieldBuffer<F>,
+	pub interleave_tensor: FieldBuffer<F>,
 	/// The challenges for each round.
-	fold_challenges: &'a [F],
+	pub fold_challenges: &'a [F],
 }
 
 impl<'a, F, VCS> FRIQueryVerifier<'a, F, VCS>

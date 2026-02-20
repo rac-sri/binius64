@@ -5,13 +5,13 @@
 use std::ops::Deref;
 
 use binius_field::{BinaryField, PackedExtension, PackedField};
-use binius_math::{multilinear::eq::eq_ind_partial_eval, ntt::AdditiveNTT, FieldBuffer};
+use binius_math::{FieldBuffer, multilinear::eq::eq_ind_partial_eval, ntt::AdditiveNTT};
 use binius_prover::{
 	fri::{self, CommitOutput, FRIFoldProver, FRIQueryProver},
 	merkle_tree::MerkleTreeProver,
 	protocols::basefold::BaseFoldProver,
 };
-use binius_transcript::{fiat_shamir::Challenger, ProverTranscript};
+use binius_transcript::{ProverTranscript, fiat_shamir::Challenger};
 use binius_utils::SerializeBytes;
 use binius_verifier::{fri::FRIParams, merkle_tree::MerkleTreeScheme};
 
@@ -191,28 +191,30 @@ where
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{arch::OptimalPackedB128, Field, PackedExtension, PackedField, Random};
+	use std::iter;
+
+	use binius_field::{Field, PackedExtension, PackedField, Random, arch::OptimalPackedB128};
 	use binius_math::{
+		BinarySubspace, FieldBuffer,
 		inner_product::inner_product_buffers,
 		multilinear::eq::eq_ind_partial_eval,
-		ntt::{domain_context::GenericOnTheFly, NeighborsLastSingleThread},
-		BinarySubspace, FieldBuffer,
+		ntt::{NeighborsLastSingleThread, domain_context::GenericOnTheFly},
 	};
 	use binius_prover::{
 		hash::parallel_compression::ParallelCompressionAdaptor,
 		merkle_tree::prover::BinaryMerkleTreeProver,
 	};
 	use binius_spartan_verifier::{
-		config::{StdChallenger, B128},
+		config::{B128, StdChallenger},
 		pcs,
 	};
 	use binius_transcript::ProverTranscript;
 	use binius_verifier::{
-		and_reduction::verifier,
-		fri::{calculate_n_test_queries, ConstantArityStrategy, FRIParams},
+		fri::{ConstantArityStrategy, FRIParams, calculate_n_test_queries},
 		hash::{StdCompression, StdDigest},
 	};
-	use rand::{rngs::StdRng, SeedableRng};
+	use itertools::izip;
+	use rand::{SeedableRng, rngs::StdRng};
 
 	use super::*;
 
@@ -534,60 +536,67 @@ mod tests {
 			)
 			.unwrap();
 
-			// Verify the main proof and get verifier with arena for extra query verification
-		let mut verifier_transcript = prover_transcript.into_verifier();
+		// Create two separate verifier transcripts from the prover transcript
+		// One for verification, one for reading the data needed for extra query
+		let prover_bytes = prover_transcript.finalize();
+
+		// First verifier transcript for main verification
+		let mut verifier_transcript = binius_transcript::VerifierTranscript::new(
+			binius_spartan_verifier::config::StdChallenger::default(),
+			prover_bytes.clone().into(),
+		);
 		let retrieved_codeword_commitment = verifier_transcript.message().read().unwrap();
 
-		let (output, verifier_with_arena) = binius_iop::basefold::verify_with_verifier(
+		use binius_iop::fri::vcs_optimal_layers_depths_iter;
+		// Verify main proof and get verifier for extra queries
+		let verifier_with_arena = pcs::verify(
+			&mut verifier_transcript,
+			evaluation_claim,
+			&evaluation_point,
+			retrieved_codeword_commitment,
 			&fri_params,
 			merkle_prover.scheme(),
-			retrieved_codeword_commitment,
-			evaluation_claim,
-			&mut verifier_transcript,
 		)
 		.unwrap();
 
-		// Verify consistency between sumcheck and FRI final values
-		assert!(
-			binius_iop::basefold::sumcheck_fri_consistency(
-				output.final_fri_value,
-				output.final_sumcheck_value,
-				&evaluation_point,
-				output.challenges,
-			),
-			"Sumcheck and FRI final values should be consistent"
-		);
-
-	// Generate 1 extra query proof at a valid index
+		// Generate 1 extra query proof at a valid index BEFORE consuming transcript
 		let extra_index = 0usize;
 		let mut extra_transcript = ProverTranscript::new(StdChallenger::default());
 		let mut extra_advice = extra_transcript.decommitment();
 		query_prover
 			.prove_query(extra_index, &mut extra_advice)
 			.unwrap();
-		let extra_proof_bytes = extra_transcript.finalize();
-
-		assert!(!extra_proof_bytes.is_empty(), "Extra proof should not be empty");
 
 
-		// The verifier_with_arena holds the FRIQueryVerifier which can be used
-		// to verify additional queries. The extra_proof_bytes contains the proof
-		// for the additional query at index 0.
-		let _verifier = verifier_with_arena.verifier();
+		// Get the verifier from the arena
+		let verifier = verifier_with_arena.verifier();
 
-		// Verify that the extra proof bytes are valid by parsing them
-		let mut extra_proof_reader = binius_transcript::VerifierTranscript::new(
-			binius_spartan_verifier::config::StdChallenger::default(),
-			extra_proof_bytes.into(),
-		);
+		// Create reader for the extra proof
+		let mut extra_proof_reader = extra_transcript.into_verifier();
 
-		// Read the coset values from the extra proof
-		let log_coset_size = fri_params.log_batch_size();
-		let coset_values: Vec<B128> = extra_proof_reader
-			.decommitment()
-			.read_scalar_slice(1 << log_coset_size)
+		// Verify that the last oracle sent is a codeword.
+		let terminate_codeword_len =
+			1 << (verifier.params.n_final_challenges() + verifier.params.rs_code().log_inv_rate());
+		let mut advice = extra_proof_reader.decommitment();
+		let terminate_codeword = advice.read_scalar_slice(terminate_codeword_len).unwrap();
+		let final_value = verifier
+			.verify_last_oracle(&ntt, &terminate_codeword, &mut advice)
 			.unwrap();
 
-		assert!(!coset_values.is_empty(), "Coset values should not be empty");
+		// Verify that the provided layers match the commitments.
+		let layers = vcs_optimal_layers_depths_iter(verifier.params, verifier.vcs)
+			.map(|layer_depth| advice.read_vec(1 << layer_depth))
+			.collect::<Result<Vec<_>, _>>()
+			.unwrap();
+		for (commitment, layer_depth, layer) in izip!(
+			iter::once(verifier.codeword_commitment).chain(verifier.round_commitments),
+			vcs_optimal_layers_depths_iter(verifier.params, verifier.vcs),
+			&layers
+		) {
+			verifier
+				.vcs
+				.verify_layer(commitment, layer_depth, layer)
+				.unwrap();
+		}
 	}
 }
