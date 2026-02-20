@@ -588,5 +588,10 @@ mod tests {
 				.verify_layer(commitment, layer_depth, layer)
 				.unwrap();
 		}
+
+		// Verify the extra query proof against the decommitted layers.
+		verifier
+			.verify_query(extra_index, &ntt, &terminate_codeword_vec, &layers, &mut advice)
+			.unwrap();
 	}
 }
