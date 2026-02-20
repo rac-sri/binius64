@@ -571,16 +571,18 @@ mod tests {
 			.verify_last_oracle(&ntt, &terminate_codeword_vec, &mut advice)
 			.unwrap();
 
+		println!("fkldsjnflkdsnf final value {:?}", final_value);
+
+		// Get the layer digests from the prover's Merkle trees
+		let layers = query_prover.vcs_optimal_layers().unwrap();
+
 		// Verify that the provided layers match the commitments.
-		let layers = vcs_optimal_layers_depths_iter(verifier.params, verifier.vcs)
-			.map(|layer_depth| advice.read_vec(1 << layer_depth))
-			.collect::<Result<Vec<_>, _>>()
-			.unwrap();
 		for (commitment, layer_depth, layer) in izip!(
 			iter::once(verifier.codeword_commitment).chain(verifier.round_commitments),
 			vcs_optimal_layers_depths_iter(verifier.params, verifier.vcs),
 			&layers
 		) {
+			println!("iter");
 			verifier
 				.vcs
 				.verify_layer(commitment, layer_depth, layer)
