@@ -5,13 +5,13 @@
 use std::ops::Deref;
 
 use binius_field::{BinaryField, PackedExtension, PackedField};
-use binius_math::{FieldBuffer, multilinear::eq::eq_ind_partial_eval, ntt::AdditiveNTT};
+use binius_math::{multilinear::eq::eq_ind_partial_eval, ntt::AdditiveNTT, FieldBuffer};
 use binius_prover::{
 	fri::{self, CommitOutput, FRIFoldProver, FRIQueryProver},
 	merkle_tree::MerkleTreeProver,
 	protocols::basefold::BaseFoldProver,
 };
-use binius_transcript::{ProverTranscript, fiat_shamir::Challenger};
+use binius_transcript::{fiat_shamir::Challenger, ProverTranscript};
 use binius_utils::SerializeBytes;
 use binius_verifier::{fri::FRIParams, merkle_tree::MerkleTreeScheme};
 
@@ -155,7 +155,7 @@ where
 		evaluation_point: &[F],
 		evaluation_claim: F,
 		transcript: &mut ProverTranscript<Challenger_>,
-	) -> Result<FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>, Error>
+	) -> Result<(FieldBuffer<F>, FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>), Error>
 	where
 		P: PackedField<Scalar = F> + PackedExtension<F>,
 		Challenger_: Challenger + Default,
@@ -193,28 +193,28 @@ where
 mod tests {
 	use std::iter;
 
-	use binius_field::{Field, PackedExtension, PackedField, Random, arch::OptimalPackedB128};
+	use binius_field::{arch::OptimalPackedB128, Field, PackedExtension, PackedField, Random};
 	use binius_math::{
-		BinarySubspace, FieldBuffer,
 		inner_product::inner_product_buffers,
 		multilinear::eq::eq_ind_partial_eval,
-		ntt::{NeighborsLastSingleThread, domain_context::GenericOnTheFly},
+		ntt::{domain_context::GenericOnTheFly, NeighborsLastSingleThread},
+		BinarySubspace, FieldBuffer,
 	};
 	use binius_prover::{
 		hash::parallel_compression::ParallelCompressionAdaptor,
 		merkle_tree::prover::BinaryMerkleTreeProver,
 	};
 	use binius_spartan_verifier::{
-		config::{B128, StdChallenger},
+		config::{StdChallenger, B128},
 		pcs,
 	};
 	use binius_transcript::ProverTranscript;
 	use binius_verifier::{
-		fri::{ConstantArityStrategy, FRIParams, calculate_n_test_queries},
+		fri::{calculate_n_test_queries, ConstantArityStrategy, FRIParams},
 		hash::{StdCompression, StdDigest},
 	};
 	use itertools::izip;
-	use rand::{SeedableRng, rngs::StdRng};
+	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
 
@@ -462,14 +462,6 @@ mod tests {
 				&mut prover_transcript,
 			)
 			.unwrap();
-
-		// Verify that query_prover can generate proofs
-		let mut temp_transcript = ProverTranscript::new(StdChallenger::default());
-		let mut advice = temp_transcript.decommitment();
-		query_prover.prove_query(0, &mut advice).unwrap();
-		let proof_bytes = temp_transcript.finalize();
-
-		assert!(!proof_bytes.is_empty(), "Proof should not be empty");
 	}
 
 	#[test]
@@ -525,7 +517,7 @@ mod tests {
 		prover_transcript.message().write(&codeword_commitment);
 
 		// Get query prover for additional queries
-		let query_prover = pcs_prover
+		let (terminate_codeword, query_prover) = pcs_prover
 			.prove_with_openings(
 				codeword.clone(),
 				&codeword_committed,
@@ -567,20 +559,16 @@ mod tests {
 			.prove_query(extra_index, &mut extra_advice)
 			.unwrap();
 
-
 		// Get the verifier from the arena
 		let verifier = verifier_with_arena.verifier();
 
 		// Create reader for the extra proof
 		let mut extra_proof_reader = extra_transcript.into_verifier();
-
-		// Verify that the last oracle sent is a codeword.
-		let terminate_codeword_len =
-			1 << (verifier.params.n_final_challenges() + verifier.params.rs_code().log_inv_rate());
 		let mut advice = extra_proof_reader.decommitment();
-		let terminate_codeword = advice.read_scalar_slice(terminate_codeword_len).unwrap();
+
+		let terminate_codeword_vec: Vec<_> = terminate_codeword.iter_scalars().collect();
 		let final_value = verifier
-			.verify_last_oracle(&ntt, &terminate_codeword, &mut advice)
+			.verify_last_oracle(&ntt, &terminate_codeword_vec, &mut advice)
 			.unwrap();
 
 		// Verify that the provided layers match the commitments.

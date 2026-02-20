@@ -130,7 +130,7 @@ where
 	pub fn prove<T: Challenger>(
 		mut self,
 		transcript: &mut ProverTranscript<T>,
-	) -> Result<FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>, Error> {
+	) -> Result<(FieldBuffer<F>, FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>), Error> {
 		let _scope = tracing::debug_span!("Basefold").entered();
 
 		let n_vars = self.sumcheck_prover.n_vars();
@@ -158,7 +158,7 @@ where
 	fn finish<T: Challenger>(
 		mut self,
 		transcript: &mut ProverTranscript<T>,
-	) -> Result<FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>, Error> {
+	) -> Result<(FieldBuffer<F>, FRIQueryProver<'a, F, P, MerkleProver, MerkleScheme>), Error> {
 		let commitment = self.fri_folder.execute_fold_round()?;
 		if let FoldRoundOutput::Commitment(commitment) = commitment {
 			transcript.message().write(&commitment);
